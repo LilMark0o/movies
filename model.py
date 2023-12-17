@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import mysql.connector
 import pandas as pd
+from imagesScraping import getImage
 
 
 def connect():
@@ -13,13 +14,11 @@ def connect():
     database = str(os.getenv("DATABASE"))
     user = str(os.getenv("USERDB"))
     password = str(os.getenv("PASSWORD"))
-    port = 3306
     connection = mysql.connector.connect(
         host=host,
         database=database,
         user=user,
         password=password,
-        port=port
     )
     return connection
 
@@ -34,7 +33,7 @@ def close(connection, cursor):
 
 def getColumnsActors():
     columns = [
-        "names VARCHAR(255)"
+        "names VARCHAR(101)"
     ]
     return columns
 
@@ -49,13 +48,13 @@ def getColumnsGenders():
 def getColumnsMovies():
     columns = [
         "names VARCHAR(255)",
-        "date_x DATE",
+        "year VARCHAR(10)",
         "score FLOAT",
-        "genre VARCHAR(255)",
         "overview TEXT",
         "budget_x BIGINT",
         "revenue BIGINT",
-        "country VARCHAR(50)"
+        "country VARCHAR(50)",
+        "image TEXT"
     ]
     return columns
 
@@ -105,8 +104,10 @@ def differentActors(df):
         # Check if data is not NaN
         if pd.notna(data):
             for person in data.split(","):
-                differentNames.append(
-                    person.strip().replace("'", " ").replace('"', " "))
+                if len(person) > 100:
+                    continue
+                actorFine = person.strip().replace("'", " ").replace('"', " ")
+                differentNames.append(actorFine)
     return list(set(differentNames))
 
 
@@ -116,6 +117,8 @@ def actorsInMovies(df):
         if pd.notna(row['crew']):
             for actor in row['crew'].split(","):
                 actorFine = actor.strip().replace("'", " ").replace('"', " ")
+                if len(actorFine) > 100:
+                    continue
                 movie = row['names']
                 if movie in actorsInMovies:
                     actorsInMovies[movie].append(actorFine)
@@ -153,24 +156,26 @@ def populateTable(connection, table_name, df):
     indexMovie = dict()
     cursor = connection.cursor()
     for index, row in df.iterrows():
+        image = str(getImage(row['names']+" movie"))
         insert_query = f"""
-            INSERT INTO {table_name} (id, names, date_x, score, overview, budget_x, revenue, country)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO {table_name} (id, names, year, score, overview, budget_x, revenue, country, image)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         values = (
             i,
             row['names'],
-            pd.to_datetime(row['date_x'], errors='coerce'),
+            row['date_x'].split("/")[2],
             row['score'],
             row['overview'],
             row['budget_x'],
             row['revenue'],
-            row['country']
+            row['country'],
+            image
         )
         cursor.execute(insert_query, values)
         indexMovie[row['names']] = i
         i += 1
-        if i % 50 == 0:
+        if i % 100 == 0:
             print(f"{i} rows inserted")
     connection.commit()
     print("Data 1 inserted successfully")
@@ -192,7 +197,7 @@ def populateTable2(connection, table_name, distinctNames):
         cursor.execute(insert_query)
         indexActors[name] = index
         index += 1
-        if index % 50 == 0:
+        if index % 100 == 0:
             print(f"{index} rows inserted")
 
     connection.commit()
@@ -214,57 +219,19 @@ def populateTable3(connection, table_name, distinctGenres):
         cursor.execute(insert_query)
         indexGenres[name] = index
         index += 1
-        if index % 50 == 0:
+        if index % 100 == 0:
             print(f"{index} rows inserted")
     connection.commit()
     print("Data 3 inserted successfully")
     return indexGenres
 
 
-def populateTable4(connection, table_name, df, indexMovies: dict, indexActors: dict):
+def populateTable6(connection, indexMovies: dict, indexActors: dict, indexGenres: dict, actorsInMovies: dict, genresInMovies: dict):
     cursor = connection.cursor()
-    for index, row in df.iterrows():
-        if pd.notna(row['crew']):
-            for actor in row['crew'].split(","):
-                actorFine = actor.strip().replace("'", " ").replace('"', " ")
-                if row['names'] in indexMovies and actorFine in indexActors:
-                    insert_query = f"""
-                        INSERT INTO {table_name} (movie_id, actor_id)
-                        VALUES ({indexMovies[row['names']]}, {indexActors[actorFine]})
-                    """
-                    cursor.execute(insert_query)
-        if index % 50 == 0:
-            print(f"{index} rows inserted")
-
-    connection.commit()
-    print("Data 4 inserted successfully")
-
-
-def populateTable5(connection, table_name, df, indexMovies: dict, indexGenres: dict):
-    cursor = connection.cursor()
-    for index, row in df.iterrows():
-        if pd.notna(row['genre']):
-            for genre in row['genre'].split(","):
-                genreFine = genre.strip()
-                if row['names'] in indexMovies and genreFine in indexGenres:
-                    insert_query = f"""
-                        INSERT INTO {table_name} (movie_id, genre_id)
-                        VALUES ({indexMovies[row['names']]}, {indexGenres[genreFine]})
-                    """
-                    cursor.execute(insert_query)
-        if index % 50 == 0:
-            print(f"{index} rows inserted")
-
-    connection.commit()
-    print("Data 5 inserted successfully")
-
-
-def populateTable6(connection, df, indexMovies: dict, indexActors: dict, indexGenres: dict, actorsInMovies: dict, genresInMovies: dict):
-    cursor = connection.cursor()
-    for index, row in df.iterrows():
-        if row["names"] in actorsInMovies and row["names"] in indexMovies:
-            idMovie = indexMovies[row["names"]]
-            for actor in actorsInMovies[row["names"]]:
+    for movie, index in indexMovies.items():
+        if movie in actorsInMovies and movie in indexMovies:
+            idMovie = indexMovies[movie]
+            for actor in actorsInMovies[movie]:
                 if actor in indexActors:
                     idActor = indexActors[actor]
                     insert_query = f"""
@@ -272,7 +239,8 @@ def populateTable6(connection, df, indexMovies: dict, indexActors: dict, indexGe
                         VALUES ({idMovie}, {idActor})
                     """
                     cursor.execute(insert_query)
-            for genre in genresInMovies[row["names"]]:
+        if movie in genresInMovies and movie in indexMovies:
+            for genre in genresInMovies[movie]:
                 if genre in indexGenres:
                     idGenre = indexGenres[genre]
                     insert_query = f"""
@@ -312,7 +280,7 @@ def createTables(connection):
 
 
 def populate(connection):
-    df = readData()
+    df = readData("XS")
     names = differentActors(df)
     genders = differentGenders(df)
     indexMovies = populateTable(connection, "movies", df)
@@ -320,11 +288,8 @@ def populate(connection):
     indexGenders = populateTable3(connection, "genre", genders)
     actorsInMoviesDict = actorsInMovies(df)
     genresInMoviesDict = genresInMovies(df)
-    populateTable6(connection, df, indexMovies,
+    populateTable6(connection, indexMovies,
                    indexActors, indexGenders, actorsInMoviesDict, genresInMoviesDict)
-
-    # populateTable4(connection, "moviesActors", df, indexMovies, indexActors)
-    # populateTable5(connection, "moviesGenres", df, indexMovies, indexGenders)
 
 
 def showProducts(connection, n):
