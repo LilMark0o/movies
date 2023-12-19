@@ -4,7 +4,7 @@ from selenium.webdriver.common.keys import Keys
 import time
 
 
-def getImage(query):
+def getImage(query, movieOrActor=1):
     driver = webdriver.Chrome()
 
     try:
@@ -14,7 +14,7 @@ def getImage(query):
 
         search_box.send_keys(query + Keys.RETURN)
 
-        time.sleep(2)
+        time.sleep(1.2)
 
         first_image = driver.find_element(
             By.CSS_SELECTOR, '#islrg > div.islrc > div:nth-child(2) > a.FRuiCf.islib.nfEiy > div.fR600b.islir > img')
@@ -23,13 +23,17 @@ def getImage(query):
         if first_image:
             image_url = first_image.get_attribute("src")
 
-        time.sleep(2)
-
+        time.sleep(1.2)
+    except Exception as e:
+        image_url = None
     finally:
         # Close the WebDriver
         driver.quit()
 
     if image_url == None:
-        return "./assets/movie.png"
+        if movieOrActor == 1:
+            return "./assets/movie.png"
+        else:
+            return "./assets/actor.png"
     else:
         return image_url

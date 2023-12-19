@@ -1,8 +1,8 @@
 from model import *
 from time import time
 
-startFromScratch = True
-deleteTables = True
+startFromScratch = 1
+deleteTables = 0
 
 if __name__ == "__main__":
     time1 = time()
@@ -14,6 +14,7 @@ if __name__ == "__main__":
     if startFromScratch:
         createTables(connection)
         populate(connection)
+    createIndexes(connection)
     showProducts(connection, 5)
     segundosTotales = time() - time1
     horas = segundosTotales // 3600

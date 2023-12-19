@@ -33,7 +33,8 @@ def close(connection, cursor):
 
 def getColumnsActors():
     columns = [
-        "names VARCHAR(101)"
+        "names VARCHAR(101)",
+        "image TEXT"
     ]
     return columns
 
@@ -93,6 +94,50 @@ def deleteTable(connection, table_name):
     print(f"Table '{table_name}' dropped successfully")
 
 
+def createIndexes(connection):
+    cursor = connection.cursor()
+
+    # Check if the index already exists before attempting to create it
+    cursor.execute("SHOW INDEX FROM movies WHERE Key_name = 'idx_score'")
+    result = cursor.fetchone()
+
+    if not result:
+        # Index for movies table
+        cursor.execute("CREATE INDEX idx_score ON movies (score)")
+
+    # Check if the index already exists before attempting to create it
+    cursor.execute(
+        "SHOW INDEX FROM moviesGenres WHERE Key_name = 'idx_genre_id'")
+    result = cursor.fetchone()
+
+    if not result:
+        # Index for moviesGenres table
+        cursor.execute("CREATE INDEX idx_genre_id ON moviesGenres (genre_id)")
+
+    # Check if the index already exists before attempting to create it
+    cursor.execute(
+        "SHOW INDEX FROM moviesActors WHERE Key_name = 'idx_actor_id'")
+    result = cursor.fetchone()
+
+    if not result:
+        # Index for actors table
+        cursor.execute("CREATE INDEX idx_actor_id ON moviesActors (actor_id)")
+
+    # Check if the index already exists before attempting to create it
+    cursor.execute(
+        "SHOW INDEX FROM moviesGenres WHERE Key_name = 'idx_movie_id_genres'")
+    result = cursor.fetchone()
+
+    if not result:
+        # Index for moviesGenres table
+        cursor.execute(
+            "CREATE INDEX idx_movie_id_genres ON moviesGenres (movie_id)")
+
+    # Commit the changes
+    connection.commit()
+    print("Indexes created successfully")
+
+
 def readData(dataSize="small"):
     df = pd.read_csv(f"imdb_movies_{dataSize}.csv")
     return df
@@ -104,7 +149,7 @@ def differentActors(df):
         # Check if data is not NaN
         if pd.notna(data):
             for person in data.split(","):
-                if len(person) > 100:
+                if len(person) > 100 or (len(person.split(" ")) < 2) or (person.count('"') > 1) or (person.count("'") > 1) or (person.count('voice') == 1):
                     continue
                 actorFine = person.strip().replace("'", " ").replace('"', " ")
                 differentNames.append(actorFine)
@@ -156,7 +201,7 @@ def populateTable(connection, table_name, df):
     indexMovie = dict()
     cursor = connection.cursor()
     for index, row in df.iterrows():
-        image = str(getImage(row['names']+" movie"))
+        image = str(getImage(row['names']+" poster movie"))
         insert_query = f"""
             INSERT INTO {table_name} (id, names, year, score, overview, budget_x, revenue, country, image)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -188,11 +233,13 @@ def populateTable2(connection, table_name, distinctNames):
     indexActors = dict()
 
     for name in distinctNames:
+        image = str(getImage(name+" actor face", 0))
+        # image = "./assets/actor.png"
         if name == "nan" or name == "None" or name == "" or name == " ":
             continue
         insert_query = f"""
-            INSERT INTO {table_name} (id, names)
-            VALUES ({index},'{name}')
+            INSERT INTO {table_name} (id, names, image)
+            VALUES ({index},'{name}', '{image}')
         """
         cursor.execute(insert_query)
         indexActors[name] = index
